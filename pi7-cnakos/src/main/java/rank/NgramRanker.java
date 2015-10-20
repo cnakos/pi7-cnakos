@@ -14,7 +14,21 @@ import type.Question;
 public class NgramRanker extends AbstractRanker {
 	
 	private int mN;
-	private boolean mComposite;
+	private boolean mCumulative;
+	
+	public NgramRanker() {
+		this(3);
+	}
+	
+	public NgramRanker(int n) {
+		this(n, false);
+	}
+	
+	// Set the n-gram size and whether to aggregate over all smaller n-grams as well.
+	public NgramRanker(int n, boolean cumulative) {
+		mN = n;
+		mCumulative = cumulative;
+	}
 
 	/**
 	 * Returns a score of the given passage associated with the given question.
@@ -27,19 +41,27 @@ public class NgramRanker extends AbstractRanker {
 	public Double score(Question question, Passage passage) {
 		// Tokenizing the same question every time isn't very efficient.
 		// For the time being, we'll let it slide.
-		String[] qTokens = tokenize(question.getSentence());
-		String[] pTokens = tokenize(passage.getText());
+		String[] qTokens = NLPUtils.tokenize(question.getSentence());
+		String[] pTokens = NLPUtils.tokenize(passage.getText());
 		
-		// Calculate sum of percentages of Question n-grams in Passage for n = 1..N.
-		// I may not keep this cumulative approach.
-		double[] scores = new double[mN];
-		for (int n = 1; n <= mN; n++) {
-			scores[n-1] = ngram_sim(qTokens, pTokens, n);
-		}
 		double score = 0.0;
-		for (int i = 0; i < scores.length; i++) {
-			score += scores[i];
+		if (mCumulative) {
+			// Calculate sum of percentages of Question n-grams in Passage for n = 1..N.
+			// I may not keep this cumulative approach.
+			
+			double[] scores = new double[mN];
+			for (int n = 1; n <= mN; n++) {
+				scores[n-1] = ngram_sim(qTokens, pTokens, n);
+			}
+			for (int i = 0; i < scores.length; i++) {
+				score += scores[i];
+			}
+			score /= scores.length;
+		} else {
+			// Calculate n-gram score for just mN.
+			score = ngram_sim(qTokens, pTokens, mN);
 		}
+		
 		passage.setScore(score);
 		
 		return score;
@@ -66,17 +88,5 @@ public class NgramRanker extends AbstractRanker {
 		}
 		score /= qTokens.length - n + 1;
 		return score;
-	}
-	
-	// Return an array of Tokens added to the jcas corresponding to the given text.
-	public static String[] tokenize(String text) {
-		TokenizerFactory<Word> factory = PTBTokenizerFactory.newTokenizerFactory();
-	    Tokenizer<Word> tokenizer = factory.getTokenizer(new StringReader(text));
-		List<Word> words = tokenizer.tokenize();
-		String[] tokens = new String[words.size()];
-		for (int i = 0; i < words.size(); i++) {
-			tokens[i] = Morphology.stemStatic(words.get(i).word(), null).word();
-		}
-		return tokens;
 	}
 }
